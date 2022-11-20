@@ -1,0 +1,35 @@
+#include <stdio.h>
+#include <stdbool.h>
+#include <stdlib.h>
+#include <math.h>
+#include <string.h>
+
+#ifdef SPKMEANS_H
+#define SPKMEANS_H
+
+
+
+void master(char* goal ,char* input_filename);
+int c_findmeans (double eps, int k, int max_iter, int vector_size, int size_of_array, float *VectorsArray, 
+                    float *cur_centroids, float *final_centro, int *number_of_vectors_array, int *cur_iter);
+void VectorsToArray(char*, float*, int);
+void ArrayInfo (char*, int*, int*);
+void find_wam (float* W, float *VectorsArray, int vector_size, int number_of_vectors);
+void find_ddg(float* D,float* W,int vector_size, int number_of_vectors);
+void find_lnorm(float* Lap, float* D, float* W, int vector_size, int number_of_vectors);
+void find_jacobi(float* A, float* P, int number_of_vectors);
+void update_p(float* p,float* p_i_row, float* p_j_row , int s_i, int s_j,
+                                           float s, float c, int number_of_vectors);
+void update_a(float* a,float* a_i_row,float* a_j_row, int s_i, int s_j,
+                                           float s, float c, int number_of_vectors);
+void sort_eigenvals_index(float* e_val, int* e_v_index, int number_of_vectors);
+int find_k (float* e_val, int* e_v_index, int number_of_vectors);
+void build_T(float* T, float* V, int* e_v_index, int k, int number_of_vectors);
+float find_t (float* a, int s_i, int s_j, int number_of_vectors);
+float norm (float* vector , int size_of_vector);
+void print_mat(float* mat, int vector_size, int number_of_vectors);
+void mult_mat (float * ans , float *A , float *B , int n);
+void mat_trans (float * ans , float *A , int n);
+void test (float *A , float *P , int n);
+
+#endif

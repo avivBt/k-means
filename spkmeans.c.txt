@@ -1,0 +1,532 @@
+#include <stdio.h>
+#include <stdbool.h>
+#include <stdlib.h>
+#include <math.h>
+#include <string.h>
+
+
+
+void master(char* goal ,char* input_filename);
+int c_findmeans (double eps, int k, int max_iter, int vector_size, int size_of_array, double *VectorsArray, 
+                    double *cur_centroids, double *final_centro, int *number_of_vectors_array, int *cur_iter);
+void VectorsToArray(char*, double*, int);
+void ArrayInfo (char*, int*, int*);
+void find_wam (double* W, double *VectorsArray, int vector_size, int number_of_vectors);
+void find_ddg(double* D,double* W,int vector_size, int number_of_vectors);
+void find_lnorm(double* Lap, double* D, double* W, int vector_size, int number_of_vectors);
+void find_jacobi(double* A, double* P, int number_of_vectors);
+void update_p(double* p,double* p_i_row, double* p_j_row , int s_i, int s_j,
+                                           double s, double c, int number_of_vectors);
+void update_a(double* a,double* a_i_row,double* a_j_row, int s_i, int s_j,
+                                           double s, double c, int number_of_vectors);
+void sort_eigenvals_index(double* e_val, int* e_v_index, int number_of_vectors);
+int find_k (double* e_val, int* e_v_index, int number_of_vectors);
+void build_T(double* T, double* V, int* e_v_index, int k, int number_of_vectors);
+double find_t (double* a, int s_i, int s_j, int number_of_vectors);
+double norm (double* vector , int size_of_vector);
+void print_mat(double* mat, int vector_size, int number_of_vectors);
+
+int main(int argc, char* argv[]){
+
+    char *goal;
+    char* input_filename;
+
+    if (argc != 3) {
+        printf ("Invalid Input!");
+        exit(1);
+    }
+    goal = argv[1];
+    input_filename = argv[2];
+    master(goal, input_filename);
+    return 0;
+}
+    
+/*
+
+THIS FUNCTION IS CALLED FROM MAIN FUNCTION IN THIS FILE, AND FROM FIT1 FUNCTION IN SPKMEANSMODULE
+IT'S GETTING THE FILE NAME, AND COMMITTING THE RELEVANT GOAL
+
+*/
+
+void master(char* goal ,char* input_filename){
+    
+    int i;
+    int j;
+    int n;
+    int d;
+    double *VectorsArray;
+    double *W;
+    double *D;
+    double *Lap;
+    double *P;
+ 
+    ArrayInfo(input_filename, &n, &d);
+      
+    VectorsArray =(double*) malloc(n*d*(sizeof(double)));
+    if (VectorsArray == NULL){
+        printf("An Error Has Occurred!");
+        exit(1);
+    }
+    VectorsToArray(input_filename, VectorsArray, n*d); 
+
+    if (strcmp(goal,"jacobi") == 0){
+        P = (double*)malloc(n*n*sizeof(double));
+        for (i = 0; i < n; i++){
+            for (j = 0 ; j < n; j ++){
+                if (i == j) P[i* n + j] = 1;
+                else P[i*n + j] = 0;
+            }
+        }   
+        find_jacobi(VectorsArray, P, n);
+        for ( i = 0; i < n; i++){
+            printf("%.4f",(float)VectorsArray[i*n + i]);
+            if (i < n -1) printf(",");
+            else printf("\n");
+        }
+        print_mat(P, n, n);
+        free(P);
+    }
+    else{
+        W = (double*)malloc(n*n*sizeof(double));
+        find_wam(W, VectorsArray, d, n);
+        if(strcmp(goal,"wam") == 0) print_mat(W, n, n);
+        else{
+            D = (double*)malloc(n*n*sizeof(double));
+            find_ddg(D, W,n, n);
+            if (strcmp(goal,"ddg") == 0) print_mat(D, n, n);
+            if (strcmp(goal, "lnorm") == 0){
+                Lap = (double*)malloc(n*n*sizeof(double));
+                find_lnorm(Lap,D,W,n,n);
+                print_mat(Lap, n, n);
+                free(Lap);
+            }
+            free(D);
+        } 
+        free(W);
+    }
+    free(VectorsArray);
+}
+
+/*
+
+THIS FUNCTION PRINTS THE OUTPUT MATRIX
+
+*/
+
+void print_mat(double* mat, int vector_size, int number_of_vectors){
+    int i;
+    int j;
+    for (i = 0; i < number_of_vectors; i++){
+        for(j = 0; j < vector_size; j++){
+            printf("%.4f",(float)mat[i* vector_size +j]);
+            if (j < vector_size -1) printf(",");
+            else printf("\n");
+        }
+    }
+}
+
+
+void ArrayInfo(char* input_file, int *number_of_vectors,int *vector_size){
+    char ch;
+    double fl;
+    int tester;
+    int count_commas = 0;
+    int num_commas = 0;
+    int count_lines = 0;
+    FILE *myFile;
+
+    myFile = fopen(input_file, "r");
+    if (myFile == NULL){
+        printf("Invalid Input!");
+        exit(1);
+    }
+    tester = fscanf(myFile,"%lf",&fl);
+    ch = fgetc(myFile);
+    while ( ch != EOF){
+        if (tester != 1){
+            printf("Invalid Input!");
+            exit(1);
+        }
+        if (ch == '\n' || ch == '\r'){
+            count_lines ++; 
+            if (count_lines == 1){
+                num_commas = count_commas;
+            }
+            if (num_commas != count_commas){
+                printf("Invalid Input!");
+                exit(1);
+            }
+            count_commas = 0;
+        }
+        else if (ch == ','){
+            count_commas++;
+        }
+        else {
+            printf("Invalid Input!");
+            exit(1);
+        } 
+        tester = fscanf(myFile,"%lf",&fl);
+        ch = fgetc(myFile);
+    }
+    fclose(myFile);
+    *vector_size = num_commas + 1;
+    *number_of_vectors = count_lines;
+    return;
+}
+
+void VectorsToArray(char* input_file, double* VectorsArray, int size_of_array){
+    FILE *myFile;
+    char ch;
+    int i;
+    myFile = fopen(input_file, "r");
+    for (i = 0; i< size_of_array; i++){
+        fscanf(myFile, "%lf", VectorsArray + i);
+        ch = fgetc(myFile);
+        if (ch == EOF){
+            break;
+        }
+    }
+    fclose(myFile);
+    return;
+}
+
+
+double Vector_dist(double *vector1 , double *vector2 , int vector_size){
+    double dist = 0;
+    int i;
+    for (i = 0 ; i < vector_size ; i++){
+        dist += (*(vector1+i) - *(vector2+i))*(*(vector1+i) - *(vector2+i));
+    }
+    return pow(dist,0.5);
+}
+
+
+
+/*
+
+BEGINNING OF SPKMEANS
+
+CALCULATING WEIGHTED ADJACENCY MATRIX
+
+*/
+
+
+void find_wam (double* W, double *VectorsArray, int vector_size, int number_of_vectors){
+    int i;
+    int j;
+    double dist;
+
+    for (i = 0; i < number_of_vectors; i ++){
+        for (j = i + 1 ;  j < number_of_vectors ; j++){
+            dist = Vector_dist(VectorsArray + i*vector_size, VectorsArray + j*vector_size, vector_size);
+            dist = exp(-dist/2);
+            W[i*number_of_vectors +j] = W[j*number_of_vectors +i] = dist;
+        }
+        W[i*number_of_vectors +i]= 0;
+    }
+}
+
+/*
+
+CALCULATING DIAGONAL DEGREE MATRIX
+
+*/
+
+void find_ddg(double* D,double* W,int vector_size, int number_of_vectors){
+    int i;
+    int j;
+    double val = 0;
+    for (i=0; i < number_of_vectors; i++){
+        for (j=0; j < vector_size; j++){
+            val += W[i*vector_size + j];
+            D[i*vector_size + j] = 0;
+        }
+        D[i*vector_size + i] = val;
+        val = 0;
+    }
+}
+
+/*
+
+CALCULATING LAPLACIAN MATRIX
+
+*/
+
+void find_lnorm(double* Lap, double* D, double* W, int vector_size, int number_of_vectors){
+    double root_d;
+    int i;
+    int j;
+    for (i = 0; i < number_of_vectors*vector_size; i ++) Lap[i] = W[i];
+    for (i = 0; i < number_of_vectors; i ++){
+        root_d = pow(D[i*vector_size + i],-0.5);
+        for (j = 0 ; j < vector_size; j ++){
+            Lap[i*vector_size + j] = -root_d * Lap[i*number_of_vectors + j];
+            Lap[j*vector_size + i] = root_d * Lap[j*vector_size + i];
+        }
+        Lap[i*number_of_vectors + i] = 1;
+    }
+}
+
+/*
+
+CALCULATING JACOBI MATRIX
+
+*/
+
+
+void find_jacobi(double* A, double* P, int number_of_vectors){
+    double s = 0.0;
+    double t;
+    double out_of_diag = 0.0;
+    double c;
+    int s_i, s_j, i, j;
+    double a_i_j;
+    double cur_off_A = 0.0;
+    double prev_off_A = 0.0;
+    double eps = pow(10,-5);
+    int num_of_rotations = 0;
+    double* i_row;
+    double* j_row;
+    i_row = (double*) malloc(sizeof(double)*number_of_vectors);
+    j_row = (double*) malloc(sizeof(double)*number_of_vectors);
+    for (i = 0; i < number_of_vectors; i ++ ){
+            for (j = 0 ; j <number_of_vectors; j++){
+                if (i==j) P[i*number_of_vectors + j] = 1;
+                else P[i*number_of_vectors + j] = 0;
+            }
+    }
+    while(true){
+        for (i = 0; i < number_of_vectors; i ++ ){
+            for (j = i+1 ; j <number_of_vectors; j++){
+                a_i_j = A[i*number_of_vectors +j];
+                cur_off_A += pow(a_i_j, 2);
+                if (fabs(a_i_j) > out_of_diag){
+                    out_of_diag = fabs(a_i_j);
+                    s_i = i;
+                    s_j = j;
+                }  
+            }
+        }
+        if (out_of_diag == 0.0 || fabs(2*cur_off_A - 2*prev_off_A) <= eps || num_of_rotations == 100)
+            break;
+        t = find_t(A, s_i, s_j, number_of_vectors);
+        c = 1/pow((pow(t,2)+1),0.5);
+        s = c*t;
+        update_p(P, i_row, j_row, s_i, s_j, s, c, number_of_vectors);
+        update_a(A, i_row, j_row, s_i, s_j, s, c, number_of_vectors);
+        out_of_diag = 0.0;
+        num_of_rotations ++;
+        prev_off_A = cur_off_A;
+        cur_off_A = 0;
+    }
+    free(j_row);
+    free(i_row);
+    return;
+}
+
+/*
+
+CALCULATING V - EIGENVECTORS
+
+*/
+
+void update_p(double* p,double* p_i_col, double* p_j_col , int s_i, int s_j, double s, double c, int number_of_vectors){
+    int r;
+    for (r = 0; r < number_of_vectors; r++){
+        p_i_col[r] = p[r*number_of_vectors + s_i];
+        p_j_col[r] = p[r*number_of_vectors + s_j];
+    }
+    for (r = 0; r < number_of_vectors; r++){
+        p[r*number_of_vectors + s_i] = c*p_i_col[r] - s*p_j_col[r];
+        p[r*number_of_vectors + s_j] = c*p_j_col[r] + s*p_i_col[r];
+    }
+}
+
+/*
+
+FINDING EIGENVALUES 
+
+*/
+
+void update_a(double* a,double* a_i_row,double* a_j_row, int s_i, int s_j, double s, double c, int number_of_vectors){
+    int r;
+    for (r = 0; r < number_of_vectors; r++){
+        a_i_row[r] = a[s_i*number_of_vectors + r];
+        a_j_row[r] = a[s_j*number_of_vectors + r];
+    }
+    for (r = 0; r < number_of_vectors ; r++){
+        a[s_i*number_of_vectors + r] = a[r*number_of_vectors + s_i] = c*a_i_row[r] - s*a_j_row[r];
+        a[s_j*number_of_vectors + r] = a[r*number_of_vectors + s_j] = c*a_j_row[r] + s*a_i_row[r];
+    }
+    a[s_i*number_of_vectors + s_i] = c*c*a_i_row[s_i] +
+                                                s*s*a_j_row[s_j] -
+                                                2*s*c*a_i_row[s_j];
+    a[s_j*number_of_vectors + s_j] = s*s*a_i_row[s_i] +
+                                                c*c*a_j_row[s_j] +
+                                                2*s*c*a_i_row[s_j];                                            
+    a[s_i*number_of_vectors + s_j] = a[s_j*number_of_vectors + s_i] = 0;
+}
+
+/*
+
+SORTING EIGENVALUES FROM LARGEST TO SMALLEST
+
+*/
+
+
+void sort_eigenvals_index(double* e_val, int* e_v_index, int number_of_vectors){
+    int i,j,max_index;
+    double* temp_e_val;
+    double max = - __FLT_MAX__;
+    temp_e_val = (double*)malloc(sizeof(double)*number_of_vectors);
+    for (i = 0 ; i < number_of_vectors ; i++){
+         temp_e_val[i] = e_val[i];
+    }
+    for (i = 0 ; i < number_of_vectors ; i++){
+        for (j = 0 ; j < number_of_vectors ; j++){
+            if (temp_e_val[j] > max){
+                max_index = j;
+                max = temp_e_val[j];
+            }
+        }
+        e_v_index[i] = max_index;
+        max = temp_e_val[max_index] = -__FLT_MAX__;
+    }
+    free(temp_e_val);
+}
+
+/*
+
+CASE K == 0 -> WE FIND K BASED ON THE EIGENGAP HEURISTIC
+
+*/
+
+int find_k (double* e_val, int* e_v_index, int number_of_vectors){
+    int i;
+    int k = 1;
+    double gap = e_val[e_v_index[0]] - e_val[e_v_index[1]];
+    for (i = 1; i < (int)number_of_vectors/2; i ++){
+        if (e_val[e_v_index[i]] - e_val[e_v_index[i+1]] > gap){
+            gap = e_val[e_v_index[i]] - e_val[e_v_index[i+1]];
+            k = i + 1;
+        }
+    }
+    return k;
+}
+
+/*
+
+CALCULATING T (MATRIX) - THE K LARGEST VECTORS OF V, NORMALIZED
+
+*/
+
+void build_T(double* T, double* V, int* e_v_index, int k, int number_of_vectors){
+    int i,j;
+    double v_norm;
+    for (i = 0 ; i < number_of_vectors ; i++){
+        for (j = 0 ; j < k ; j++){
+            T[i*k + j] = V[i*number_of_vectors + e_v_index[j]];
+        }
+    }
+    for (i = 0 ; i < number_of_vectors ; i++){
+        v_norm = norm(T + i*k , k);
+        if (v_norm != 0){
+            for (j = 0 ; j < k ; j++){
+                T[i*k + j] = T[i*k + j] / v_norm;
+            }
+        }
+    }        
+}
+
+/*
+
+CALCULATING t - (Ajj- Aii)// 2Aij, WHERE Aij IS THE OFF DIAGONAL ELEMENT OF P WITH THE LARGEST ABSOLUTE VALUE
+
+*/
+
+double find_t (double* a, int s_i, int s_j, int number_of_vectors){
+    double teta;
+    int sign_teta;
+    teta = ((a[s_j*number_of_vectors + s_j] - a[s_i*number_of_vectors + s_i])/ 
+                                            (2* a[s_i*number_of_vectors + s_j]));
+    if (teta >= 0)
+        sign_teta = 1;
+    else
+        sign_teta = -1;
+    return (sign_teta/(fabs(teta) + pow(pow(teta,2)+1,0.5)));
+}
+
+/*
+
+CALCULATING VECTOR'S NORM
+
+*/
+
+double norm (double* vector , int size_of_vector){
+    int i;
+    double sum = 0;
+    for (i=0 ; i< size_of_vector ; i++){
+        sum += pow(vector[i],2);
+    }
+return sqrt(sum);
+}
+
+
+/* 
+
+FROM HERE IT'S KMEANS - HW1
+
+*/
+
+
+int c_findmeans (double eps, int k, int max_iter, int vector_size, int size_of_array, double *VectorsArray,  
+                    double *cur_centroids,double *final_centro, int *number_of_vectors_array, int *cur_iter){
+    
+    double cur_min_dist;
+    int closest_centro_index;
+    double eval_dist;
+    int num_of_vec;
+    int nv_index;
+    int i;
+    int j;
+    int vector_index;
+    int centro_index;
+    for (i = 0 ; i < k ; i++){
+        number_of_vectors_array[i] = 0;
+    }
+    
+    for (vector_index = 0 ; vector_index < size_of_array ; vector_index += vector_size){
+        cur_min_dist = Vector_dist (VectorsArray + vector_index,cur_centroids, vector_size);
+        closest_centro_index = 0;
+        for (centro_index = vector_size; centro_index < vector_size *k ; centro_index += vector_size){
+            eval_dist = Vector_dist(VectorsArray + vector_index,cur_centroids + centro_index, vector_size);
+            if (eval_dist < cur_min_dist){
+                cur_min_dist = eval_dist;
+                closest_centro_index = centro_index; 
+            }
+        }
+        nv_index = closest_centro_index/vector_size;
+        num_of_vec = number_of_vectors_array[nv_index];
+        for (i = 0 ; i < vector_size ; i++){
+            final_centro[closest_centro_index+i] = (final_centro[closest_centro_index+i]*num_of_vec + VectorsArray[vector_index+i])/(num_of_vec+1);
+        }
+        number_of_vectors_array[nv_index] += 1;
+        
+
+    }
+    
+    (*cur_iter) ++;
+    if (*cur_iter >= max_iter)
+        return 0;
+    for (i = 0 ; i < vector_size *k ; i += vector_size){
+        if (Vector_dist(final_centro + i , cur_centroids + i , vector_size) > pow(eps,2)){
+            for (j = 0 ; j < vector_size * k ; j++){
+                cur_centroids[j] = final_centro[j];
+                final_centro[j] = 0;
+            }
+            c_findmeans(eps, k, max_iter, vector_size, size_of_array, VectorsArray, cur_centroids, 
+                     final_centro, number_of_vectors_array, cur_iter);
+        }
+    }
+    return 0;
+}
